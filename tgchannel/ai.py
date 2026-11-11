@@ -29,8 +29,8 @@ SCHEMA = {
 
 SYSTEM = """Ты — редактор Telegram-канала. {style}
 
-Тебе дают свежие посты из чужих каналов (новости игр и мемы). Выбери ОДНО, о чём сделать пост:
-- type="news": новость про игры. Сильно предпочитай новость, о которой пишут НЕСКОЛЬКО разных каналов
+{topic}Тебе дают свежие посты из чужих каналов (новости и, возможно, мемы). Выбери ОДНО, о чём сделать пост:
+- type="news": новость по теме канала. Сильно предпочитай новость, о которой пишут НЕСКОЛЬКО разных каналов
   (это и подтверждение, и признак, что тема горячая). В source_ids перечисли ВСЕ посты про эту новость.
   Напиши пост СВОИМИ словами: сведи факты из всех источников, не копируй фразы. Не добавляй фактов,
   которых нет в источниках, — ничего не выдумывай (даты, цены, цитаты, названия).
@@ -56,7 +56,7 @@ def _post_line(p: Post) -> dict:
 
 
 def choose_and_write(posts: list[Post], recent_topics: list[str], style: str, limit: int = 900,
-                     want: str = "") -> dict:
+                     want: str = "", topic: str = "") -> dict:
     user = {
         "recent_topics_already_posted": recent_topics[-30:],
         "posts": [_post_line(p) for p in posts],
@@ -64,7 +64,8 @@ def choose_and_write(posts: list[Post], recent_topics: list[str], style: str, li
     if want:
         user["preferred_type_this_time"] = want
     body = {
-        "systemInstruction": {"parts": [{"text": SYSTEM.format(style=style, limit=limit)}]},
+        "systemInstruction": {"parts": [{"text": SYSTEM.format(style=style, limit=limit,
+                                                               topic=f"Тема канала: {topic}. Посты не по теме пропускай.\n\n" if topic else "")}]},
         "contents": [{"role": "user", "parts": [{"text": json.dumps(user, ensure_ascii=False)}]}],
         "generationConfig": {"responseMimeType": "application/json", "responseSchema": SCHEMA, "temperature": 0.9},
     }

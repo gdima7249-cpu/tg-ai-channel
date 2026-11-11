@@ -245,6 +245,78 @@ systemctl disable --now tgchannel-bot
 
 ---
 
+## Часть 6. Ещё каналы (сколько угодно)
+
+Одна установка ведёт несколько каналов. Бот, ключ Gemini и одобрение в личке — общие; у каждого канала
+свои источники, тема, стиль и своя память об опубликованном. Канал из частей 1–5 остаётся «основным».
+
+### 6.1. Создайте канал в Telegram и добавьте того же бота администратором
+
+Как в шагах 1.1 и 1.3 (новый бот не нужен).
+
+### 6.2. Создайте канал на сервере
+
+Имя — латиницей, например `news` (это только имя папки, не username канала). `--preset news` подставит
+готовый список новостных источников (непроверенный), без него будет пустой образец.
+
+```bash
+cd /opt/tgchannel/app && sudo -u tgchannel .venv/bin/python -m tgchannel new-channel news --preset news
+```
+
+### 6.3. Настройки канала
+
+```bash
+sudo -u tgchannel nano channels/news/.env
+```
+
+Впишите `TG_CHANNEL=@username_нового_канала`, тему (`CHANNEL_TOPIC=`, например «главные новости дня»),
+при желании стиль и подпись. Сохранить: Ctrl+O, Enter, Ctrl+X.
+
+### 6.4. Источники
+
+Проверьте кандидатов и оставьте в списке только отмеченные ✓:
+
+```bash
+sudo -u tgchannel .venv/bin/python -m tgchannel probe rian_ru tass_agency rbc_news meduzalive bbcrussian
+```
+
+```bash
+sudo -u tgchannel nano channels/news/sources.txt
+```
+
+### 6.5. Проверка и пробный пост
+
+```bash
+sudo -u tgchannel .venv/bin/python -m tgchannel --channel news check
+```
+
+```bash
+sudo -u tgchannel .venv/bin/python -m tgchannel --channel news post --dry-run
+```
+
+### 6.6. Расписание для канала
+
+```bash
+cp deploy/tgchannel@.service deploy/tgchannel@.timer /etc/systemd/system/
+```
+
+```bash
+systemctl daemon-reload && systemctl enable --now tgchannel@news.timer
+```
+
+Для следующего канала (например `tech`) повторите 6.1–6.5 и включите `tgchannel@tech.timer`.
+Служба кнопок одна на все каналы — после добавления канала перезапускать её не нужно.
+Над каждым черновиком бот пишет, для какого он канала.
+
+Список всех каналов:
+
+```bash
+sudo -u tgchannel .venv/bin/python -m tgchannel channels
+```
+
+Каждый канал — это отдельный запрос к Gemini на каждый пост: 3 канала × 10 постов = 30 запросов в день.
+Следите, чтобы хватало лимита бесплатного тарифа (при нехватке в логе будет `429`).
+
 ## Полезное
 
 Посмотреть последние записи журнала (что публиковалось, ошибки):
@@ -299,5 +371,6 @@ systemctl disable --now tgchannel.timer
 | `Gemini недоступен или лимит исчерпан (…404)` | Модели из `GEMINI_MODELS` сняты Google. Посмотрите актуальные названия в AI Studio и впишите в `.env`. |
 | `свежих постов в источниках: 0` | Все каналы из `sources.txt` мёртвые/закрытые или ничего не писали за сутки. Добавьте другие. |
 | `Модель решила пропустить` | Не нашлось подходящей темы — это нормально, пост выйдет в следующий раз. |
+| `Нет канала news: создайте его командой …` | Опечатка в имени или канал не создан — шаг 6.2. Список: `python -m tgchannel channels` |
 | Кнопки не нажимаются / «часики» и ничего | Не запущена служба кнопок — шаг 5.2. Логи: `journalctl -u tgchannel-bot -n 30 --no-pager` |
 | `ssh: connect … timed out` | Неверный IP или сервер выключен — проверьте в панели хостинга. |

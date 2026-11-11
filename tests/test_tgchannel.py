@@ -45,12 +45,15 @@ def test_wanted_type():
     assert cli.wanted_type(st()) == ""
     assert cli.wanted_type(st("news", "news")) == "meme"
     assert cli.wanted_type(st("news", "meme")) == "news"
+    assert cli.wanted_type(st("news", "news"), has_memes=False) == "news"
 
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "ROOT", tmp_path)
     monkeypatch.setattr(cli, "STATE", tmp_path / "data" / "state.json")
+    monkeypatch.setattr(cli, "SOURCES", tmp_path / "sources.txt")
+    monkeypatch.setattr(cli, "CHANNEL", "")
     (tmp_path / "sources.txt").write_text("a news\nb news\n", encoding="utf-8")
     monkeypatch.setenv("TG_BOT_TOKEN", "x")
     monkeypatch.setenv("TG_CHANNEL", "@mine")
@@ -76,7 +79,7 @@ def _args(**kw):
 def test_post_publishes_with_image_from_other_channel(env, monkeypatch):
     seen = {}
 
-    def fake(posts, topics, style, limit, want):
+    def fake(posts, topics, style, limit, want, topic=""):
         seen["ids"] = [p.id for p in posts]
         return {"type": "news", "source_ids": ["a/1", "b/5"], "image_id": "", "text": "Трейлер X!", "topic": "трейлер X"}
 
@@ -152,20 +155,67 @@ def _cb(data, user=777, chat=777, mid=11):
 
 
 def test_approve_button_copies_all_parts(tg):
-    cli.handle_update(_cb("pub:10:11"), "t", "777", "@mine")
+    cli.handle_update(_cb("pub:10:11"), "t", "777", {"": "@mine"})
     assert ("copy_message", "@mine", 777, 10) in tg and ("copy_message", "@mine", 777, 11) in tg
     assert tg[-1][0] == "set_buttons" and "Опубликовано" in tg[-1][3][0][0]["text"]
 
 
 def test_reject_and_foreign_user(tg):
-    cli.handle_update(_cb("rej:10:10"), "t", "777", "@mine")
+    cli.handle_update(_cb("rej:10:10"), "t", "777", {"": "@mine"})
     assert not any(c[0] == "copy_message" for c in tg)
     tg.clear()
-    cli.handle_update(_cb("pub:10:10", user=666, chat=666), "t", "777", "@mine")
+    cli.handle_update(_cb("pub:10:10", user=666, chat=666), "t", "777", {"": "@mine"})
     assert tg == [("answer_callback", "q", "Нет доступа")]
 
 
-def test_reply_plus_publishes_old_message(tg):
+def test_reply_plus_publishes_old_message(tg, tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "ROOT", tmp_path)
     upd = {"update_id": 2, "message": {"chat": {"id": 777}, "text": "+", "reply_to_message": {"message_id": 5}}}
-    cli.handle_update(upd, "t", "777", "@mine")
+    cli.handle_update(upd, "t", "777", {"": "@mine"})
     assert tg[0] == ("copy_message", "@mine", "777", 5)
+
+
+def test_multichannel(tmp_path, monkeypatch, tg):
+    """Два канала: callback с именем канала публикует в нужный, ответ «+» находит канал черновика."""
+    monkeypatch.setattr(cli, "ROOT", tmp_path)
+    (tmp_path / ".env").write_text("TG_CHANNEL=@games\nTG_BOT_TOKEN=x\n", encoding="utf-8")
+    monkeypatch.setattr(cli, "SOURCES", tmp_path / "sources.example.txt")
+    (tmp_path / "sources.example.txt").write_text("# пример\n", encoding="utf-8")
+    args = type("A", (), {"name": "news", "preset": ""})()
+    assert cli.cmd_new_channel(args) == 0
+    env = (tmp_path / "channels" / "news" / ".env")
+    env.write_text(env.read_text(encoding="utf-8").replace("TG_CHANNEL=\n", "TG_CHANNEL=@news\n"), encoding="utf-8")
+    chans = cli.list_channels()
+    assert chans == {"": "@games", "news": "@news"}
+
+    assert cli.approve_buttons([3, 4], "news")[0][0]["callback_data"] == "pub:news:3:4"
+    cli.handle_update(_cb("pub:news:3:4"), "t", "777", chans)
+    assert [c for c in tg if c[0] == "copy_message"] == [("copy_message", "@news", 777, 3), ("copy_message", "@news", 777, 4)]
+
+    tg.clear()
+    monkeypatch.setattr(cli, "CHANNEL", "news")
+    cli.remember_drafts([9])
+    upd = {"update_id": 3, "message": {"chat": {"id": 777}, "text": "+", "reply_to_message": {"message_id": 9}}}
+    cli.handle_update(upd, "t", "777", chans)
+    assert tg[0] == ("copy_message", "@news", "777", 9)
+
+    tg.clear()  # неизвестное сообщение при двух каналах — не угадываем
+    upd["message"]["reply_to_message"]["message_id"] = 100
+    cli.handle_update(upd, "t", "777", chans)
+    assert not any(c[0] == "copy_message" for c in tg)
+
+
+def test_select_channel_env_priority(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "ROOT", tmp_path)
+    import os
+    monkeypatch.setattr(os, "environ", {})  # не засорять настоящее окружение других тестов
+    (tmp_path / ".env").write_text("TG_CHANNEL=@games\nCHANNEL_STYLE=игры\nGEMINI_API_KEY=k\n", encoding="utf-8")
+    d = tmp_path / "channels" / "news"
+    d.mkdir(parents=True)
+    (d / ".env").write_text("TG_CHANNEL=@news\nCHANNEL_STYLE=новости\n", encoding="utf-8")
+    cli.select_channel("news")
+    assert (os.environ["TG_CHANNEL"], os.environ["CHANNEL_STYLE"], os.environ["GEMINI_API_KEY"]) == ("@news", "новости", "k")
+    assert cli.SOURCES == d / "sources.txt" and cli.STATE == d / "data" / "state.json"
+    monkeypatch.setattr(cli, "SOURCES", tmp_path / "sources.txt")
+    monkeypatch.setattr(cli, "STATE", tmp_path / "data" / "state.json")
+    monkeypatch.setattr(cli, "CHANNEL", "")

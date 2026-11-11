@@ -1,0 +1,11 @@
+[Unit]
+Description=tgchannel: один пост в канал %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/tgchannel/app
+ExecStart=/opt/tgchannel/app/.venv/bin/python -m tgchannel --channel %i post
+User=tgchannel
+TimeoutStartSec=15min

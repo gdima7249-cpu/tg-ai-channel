@@ -1,0 +1,9 @@
+# Общие новости — кандидаты, НЕ проверены. Перед использованием:
+#   python -m tgchannel probe rian_ru tass_agency rbc_news meduzalive bbcrussian
+# и оставьте только те, что отмечены ✓. Чем больше разных редакций, тем лучше
+# работает «новость из нескольких источников».
+rian_ru news        # РИА Новости
+tass_agency news    # ТАСС
+rbc_news news       # РБК
+meduzalive news     # Медуза
+bbcrussian news     # Русская служба Би-би-си

@@ -1,0 +1,13 @@
+# Кандидаты из открытых подборок (ноябрь 2026). НЕ проверены: часть может быть мёртвой
+# или не по теме. Скопируйте нужные строки в sources.txt и проверьте: python -m tgchannel sources
+# Новости игр
+stopgamenews news      # StopGame, только новости
+stopgameru news        # StopGame, основной канал
+ixbtgames news         # iXBT Games
+NewGameProject news    # «ИГРОВЫЕ НОВОСТИ» (по TGStat)
+gamerbay news          # анонсы, трейлеры, патчи
+greatgamer news
+gamer news             # проверить
+indie news             # инди-игры, проверить
+# Мемы (thebgm, memgames1, biibbggch на 11.11.2026 не читались — удалены)
+# Кандидаты для проверки: python -m tgchannel probe FniteMemes cybersport_world STALCRAFTxMEMES

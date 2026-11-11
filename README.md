@@ -58,6 +58,11 @@ journalctl -u tgchannel -n 50           # логи
 
 Время и количество постов меняются в `deploy/tgchannel.timer` (строки `OnCalendar`).
 
+## Несколько каналов
+
+Одна установка ведёт сколько угодно каналов: `python -m tgchannel new-channel news --preset news`,
+настройки в `channels/news/`, расписание `tgchannel@news.timer`. Подробно — INSTALL.md, часть 6.
+
 ## Ограничения (честно)
 
 - Читаются только **публичные** каналы с включённым веб-превью. Если Telegram поменяет разметку страницы,

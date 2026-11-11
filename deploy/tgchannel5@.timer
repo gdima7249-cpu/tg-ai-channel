@@ -1,0 +1,16 @@
+[Unit]
+Description=tgchannel: 5 постов в день в канал %i (для каналов с небольшим числом источников)
+
+[Timer]
+Unit=tgchannel@%i.service
+# Время московское, к каждому запуску — случайная задержка до 30 минут.
+OnCalendar=*-*-* 09:00:00 Europe/Moscow
+OnCalendar=*-*-* 12:00:00 Europe/Moscow
+OnCalendar=*-*-* 15:00:00 Europe/Moscow
+OnCalendar=*-*-* 18:00:00 Europe/Moscow
+OnCalendar=*-*-* 21:00:00 Europe/Moscow
+RandomizedDelaySec=30min
+Persistent=false
+
+[Install]
+WantedBy=timers.target

@@ -317,6 +317,17 @@ cp deploy/tgchannel@.service deploy/tgchannel@.timer /etc/systemd/system/
 systemctl daemon-reload && systemctl enable --now tgchannel@news.timer
 ```
 
+Если у канала мало живых источников (меньше ~20 свежих постов в сутки), лучше 5 постов в день вместо 10 —
+иначе модель начнёт брать что попало:
+
+```bash
+cp deploy/tgchannel5@.timer /etc/systemd/system/ && systemctl daemon-reload
+```
+
+```bash
+systemctl disable --now tgchannel@news.timer && systemctl enable --now tgchannel5@news.timer
+```
+
 Для следующего канала (например `tech`) повторите 6.1–6.5 и включите `tgchannel@tech.timer`.
 Служба кнопок одна на все каналы — после добавления канала перезапускать её не нужно.
 Над каждым черновиком бот пишет, для какого он канала.

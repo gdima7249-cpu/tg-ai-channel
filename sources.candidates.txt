@@ -9,7 +9,5 @@ gamerbay news          # анонсы, трейлеры, патчи
 greatgamer news
 gamer news             # проверить
 indie news             # инди-игры, проверить
-# Мемы
-thebgm meme            # «Лучшие игровые мемы», маленький
-memgames1 meme         # «Мемы из игр»
-biibbggch meme         # «Игровые Memes 🎮»
+# Мемы (thebgm, memgames1, biibbggch на 11.11.2026 не читались — удалены)
+# Кандидаты для проверки: python -m tgchannel probe FniteMemes cybersport_world STALCRAFTxMEMES

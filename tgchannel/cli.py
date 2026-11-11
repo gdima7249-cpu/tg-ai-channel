@@ -4,6 +4,7 @@ post     — собрать посты из источников, выбрать
            (--dry-run: только показать текст, ничего не отправлять)
 check    — проверить настройки: токен бота, доступ к каналу, ключ Gemini, источники
 sources  — показать, что удалось прочитать из каждого источника
+probe    — проверить любые каналы до добавления в sources.txt: python -m tgchannel probe имя1 имя2 ...
 """
 
 from __future__ import annotations
@@ -189,6 +190,26 @@ def cmd_sources(args) -> int:
     return 0
 
 
+def cmd_probe(args) -> int:
+    """Живой ли канал: сколько постов на странице, сколько с картинками, когда был последний."""
+    now = datetime.now(timezone.utc)
+    for raw in args.channels:
+        name = scrape.normalize_name(raw)
+        posts = scrape.fetch_channel(name)
+        if not posts:
+            print(f"✗ {name}: не читается (нет канала, закрыт или превью выключено)")
+            continue
+        dates = [p.date for p in posts if p.date]
+        last = max(dates) if dates else None
+        age = f"{(now - last).total_seconds() / 3600:.0f} ч назад" if last else "дата неизвестна"
+        imgs = sum(1 for p in posts if p.images)
+        fresh = sum(1 for d in dates if now - d <= timedelta(hours=args.hours))
+        mark = "✓" if fresh else "~"
+        print(f"{mark} {name}: постов на странице {len(posts)}, с картинкой {imgs}, "
+              f"за {args.hours:.0f} ч — {fresh}, последний {age}")
+    return 0
+
+
 def main(argv=None) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S")
     load_env(ROOT / ".env")
@@ -201,6 +222,10 @@ def main(argv=None) -> None:
         p.set_defaults(fn=fn)
         if name == "post":
             p.add_argument("--dry-run", action="store_true", help="показать пост, ничего не публиковать")
+    p = sub.add_parser("probe")
+    p.add_argument("channels", nargs="+", help="username каналов (можно с @ или ссылкой t.me)")
+    p.add_argument("--hours", type=float, default=24)
+    p.set_defaults(fn=cmd_probe)
     args = ap.parse_args(argv)
     try:
         sys.exit(args.fn(args))

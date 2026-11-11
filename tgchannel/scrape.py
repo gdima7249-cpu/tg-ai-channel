@@ -77,6 +77,15 @@ def fetch_channel(channel: str, kind: str = "news", timeout: float = 20) -> list
     return parse_channel_html(resp.text, channel, kind)
 
 
+def normalize_name(raw: str) -> str:
+    """@name, t.me/name, https://t.me/s/name → name."""
+    name = raw.strip().lstrip("@")
+    for prefix in ("https://", "http://", "t.me/", "s/"):  # str.removeprefix есть только с Python 3.9
+        if name.startswith(prefix):
+            name = name[len(prefix):]
+    return name.strip("/")
+
+
 def read_sources(path: str) -> list[tuple[str, str]]:
     out = []
     with open(path, encoding="utf-8") as f:
@@ -85,11 +94,7 @@ def read_sources(path: str) -> list[tuple[str, str]]:
             if not line:
                 continue
             parts = line.split()
-            name = parts[0].lstrip("@")
-            for prefix in ("https://", "http://", "t.me/", "s/"):  # str.removeprefix есть только с Python 3.9
-                if name.startswith(prefix):
-                    name = name[len(prefix):]
-            name = name.strip("/")
+            name = normalize_name(parts[0])
             kind = parts[1] if len(parts) > 1 and parts[1] in ("news", "meme") else "news"
             out.append((name, kind))
     return out

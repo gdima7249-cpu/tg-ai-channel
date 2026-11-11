@@ -113,3 +113,17 @@ def test_publish_long_text_splits(monkeypatch):
     calls.clear()
     telegram.publish("t", "c", "short", b"img")
     assert calls == ["sendPhoto"]
+
+
+def test_normalize_name():
+    for raw in ("stalcraft", "@stalcraft", "t.me/stalcraft", "https://t.me/s/stalcraft/", "http://t.me/stalcraft"):
+        assert scrape.normalize_name(raw) == "stalcraft"
+
+
+def test_probe(monkeypatch, capsys):
+    feeds = {"live": [scrape.Post("live/1", "live", "news", "мем", ["https://cdn/1.jpg"], NOW)], "dead": []}
+    monkeypatch.setattr(scrape, "fetch_channel", lambda name, kind="news": feeds[name])
+    args = type("A", (), {"channels": ["@live", "https://t.me/s/dead"], "hours": 24})()
+    assert cli.cmd_probe(args) == 0
+    out = capsys.readouterr().out
+    assert "✓ live" in out and "с картинкой 1" in out and "✗ dead" in out

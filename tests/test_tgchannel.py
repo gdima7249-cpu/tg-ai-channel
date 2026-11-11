@@ -232,3 +232,71 @@ def test_new_channel_preset_fills_topic(tmp_path, monkeypatch):
     with pytest.raises(SystemExit):
         cli.cmd_new_channel(type("A", (), {"name": "x", "preset": "nope"})())
     assert not (tmp_path / "channels" / "x").exists()
+
+
+def test_next_pacific_midnight():
+    from tgchannel import ai
+    utc = lambda *a: datetime(*a, tzinfo=timezone.utc)
+    # лето (PDT, UTC−7): полночь = 07:00 UTC
+    assert ai.next_pacific_midnight(utc(2026, 7, 1, 12, 0)) == utc(2026, 7, 2, 7, 0)
+    assert ai.next_pacific_midnight(utc(2026, 7, 1, 6, 59)) == utc(2026, 7, 1, 7, 0)
+    # зима (PST, UTC−8): полночь = 08:00 UTC
+    assert ai.next_pacific_midnight(utc(2026, 11, 11, 12, 0)) == utc(2026, 11, 12, 8, 0)
+    assert ai.next_pacific_midnight(utc(2026, 1, 15, 3, 0)) == utc(2026, 1, 15, 8, 0)
+
+
+class _Resp:
+    def __init__(self, status, payload):
+        self.status_code, self._p, self.text = status, payload, json.dumps(payload)
+
+    def json(self):
+        return self._p
+
+
+DAILY_429 = {"error": {"code": 429, "message": "You exceeded your current quota", "status": "RESOURCE_EXHAUSTED",
+                       "details": [{"@type": "type.googleapis.com/google.rpc.QuotaFailure", "violations": [
+                           {"quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier"}]}]}}
+MINUTE_429 = {"error": {"code": 429, "message": "quota", "details": [{"violations": [
+    {"quotaId": "GenerateRequestsPerMinutePerProjectPerModel-FreeTier"}]}]}}
+OK = {"candidates": [{"content": {"parts": [{"text": '{"ok": true}'}]}}]}
+
+
+def test_daily_quota_is_remembered(tmp_path, monkeypatch):
+    from tgchannel import ai
+    monkeypatch.setattr(ai, "QUOTA_FILE", tmp_path / "q.json")
+    monkeypatch.setenv("GEMINI_API_KEY", "k")
+    monkeypatch.setenv("GEMINI_MODELS", "flash,lite")
+    monkeypatch.setattr(ai.time, "sleep", lambda s: None)
+    calls = []
+
+    def post(url, **kw):
+        model = url.split("/models/")[1].split(":")[0]
+        calls.append(model)
+        return _Resp(429, DAILY_429) if model == "flash" else _Resp(200, OK)
+
+    monkeypatch.setattr(ai.requests, "post", post)
+    assert ai.gemini_json({}) == {"ok": True}
+    assert calls == ["flash", "lite"] and "flash" in ai.exhausted_models()
+    calls.clear()
+    assert ai.gemini_json({}) == {"ok": True}
+    assert calls == ["lite"]  # второй раз flash уже не дёргаем
+
+    # после сброса снова пробуем flash
+    later = datetime.now(timezone.utc) + timedelta(days=2)
+    assert ai.exhausted_models(later) == {}
+
+
+def test_minute_quota_not_remembered_and_all_exhausted(tmp_path, monkeypatch):
+    from tgchannel import ai
+    monkeypatch.setattr(ai, "QUOTA_FILE", tmp_path / "q.json")
+    monkeypatch.setenv("GEMINI_API_KEY", "k")
+    monkeypatch.setenv("GEMINI_MODELS", "flash")
+    monkeypatch.setattr(ai.time, "sleep", lambda s: None)
+    monkeypatch.setattr(ai.requests, "post", lambda url, **kw: _Resp(429, MINUTE_429))
+    with pytest.raises(RuntimeError):
+        ai.gemini_json({})
+    assert ai.exhausted_models() == {}
+    ai.mark_exhausted("flash")
+    monkeypatch.setattr(ai.requests, "post", lambda *a, **k: pytest.fail("не должно вызываться"))
+    with pytest.raises(RuntimeError, match="дневной лимит"):
+        ai.gemini_json({})

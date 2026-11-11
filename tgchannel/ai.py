@@ -6,6 +6,8 @@ import json
 import logging
 import os
 import time
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import requests
 
@@ -72,19 +74,100 @@ def choose_and_write(posts: list[Post], recent_topics: list[str], style: str, li
     return gemini_json(body)
 
 
+QUOTA_FILE = Path(__file__).resolve().parent.parent / "data" / "gemini_quota.json"
+
+
+def next_pacific_midnight(now: datetime) -> datetime:
+    """Ближайшая полночь по тихоокеанскому времени (тогда Google сбрасывает дневные лимиты), в UTC.
+    Без zoneinfo (его нет в Python 3.8): летнее время — со 2-го воскресенья марта по 1-е воскресенье ноября."""
+    def nth_sunday(year, month, n):
+        d = datetime(year, month, 1, tzinfo=timezone.utc)
+        d += timedelta(days=(6 - d.weekday()) % 7)
+        return d + timedelta(weeks=n - 1)
+
+    def offset(utc: datetime) -> timedelta:  # переход в 02:00 местного = 10:00 UTC (март) / 09:00 UTC (ноябрь)
+        start = nth_sunday(utc.year, 3, 2) + timedelta(hours=10)
+        end = nth_sunday(utc.year, 11, 1) + timedelta(hours=9)
+        return timedelta(hours=-7) if start <= utc < end else timedelta(hours=-8)
+
+    local = now + offset(now)
+    midnight_local = (local + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    utc = midnight_local - offset(now)
+    return utc - (offset(utc) - offset(now))  # если между сейчас и полночью сменилось время
+
+
+def _load_quota() -> dict:
+    try:
+        return json.loads(QUOTA_FILE.read_text(encoding="utf-8"))
+    except (FileNotFoundError, ValueError):
+        return {}
+
+
+def exhausted_models(now: datetime | None = None) -> dict:
+    """Модели, у которых кончился дневной лимит: модель → до какого момента (UTC) не пробовать."""
+    now = now or datetime.now(timezone.utc)
+    out = {}
+    for model, until in _load_quota().items():
+        try:
+            t = datetime.fromisoformat(until)
+        except (TypeError, ValueError):
+            continue
+        if t > now:
+            out[model] = t
+    return out
+
+
+def mark_exhausted(model: str, now: datetime | None = None) -> datetime:
+    now = now or datetime.now(timezone.utc)
+    until = next_pacific_midnight(now)
+    data = {m: t.isoformat() for m, t in exhausted_models(now).items()}
+    data[model] = until.isoformat()
+    QUOTA_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = QUOTA_FILE.with_suffix(f".{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(data), encoding="utf-8")
+    tmp.replace(QUOTA_FILE)
+    return until
+
+
+def is_daily_quota(resp) -> bool:
+    """429 бывает от лимита в минуту (подождать) и в день (до сброса). Google пишет, какой лимит
+    кончился, в error.details[].violations[].quotaId, например ...PerDay... — по нему и отличаем."""
+    try:
+        err = resp.json().get("error", {})
+    except ValueError:
+        return False
+    text = json.dumps(err).lower()
+    return "perday" in text or "per day" in text or "requests_per_day" in text
+
+
 def gemini_json(body: dict) -> dict:
     key = os.environ.get("GEMINI_API_KEY")
     if not key:
         raise RuntimeError("Нет GEMINI_API_KEY в .env")
     models = [m.strip() for m in os.environ.get("GEMINI_MODELS", "gemini-flash-latest").split(",") if m.strip()]
+    skip = exhausted_models()
+    for model in models:
+        if model in skip:
+            log.info("%s: дневной лимит исчерпан, не пробую до %s UTC", model, skip[model].strftime("%d.%m %H:%M"))
+    models = [m for m in models if m not in skip]
+    if not models:
+        soonest = min(skip.values())
+        raise RuntimeError(f"У всех моделей кончился дневной лимит Gemini, сброс около "
+                           f"{soonest.strftime('%d.%m %H:%M')} UTC")
     last = "нет ответа"
     for rnd in range(3):
-        for model in models:
+        for model in list(models):
             try:
                 resp = requests.post(GEMINI_URL.format(model=model), json=body, timeout=(10, 90),
                                      headers={"x-goog-api-key": key})
             except requests.RequestException as e:
                 last = f"{model}: {type(e).__name__}"
+                continue
+            if resp.status_code == 429 and is_daily_quota(resp):
+                until = mark_exhausted(model)
+                log.warning("%s: кончился дневной лимит, запомнил до %s UTC", model, until.strftime("%d.%m %H:%M"))
+                models.remove(model)
+                last = f"{model}: дневной лимит"
                 continue
             if resp.status_code in (429, 500, 503, 404):
                 last = f"{model}: {resp.status_code}"
@@ -107,6 +190,8 @@ def gemini_json(body: dict) -> dict:
                 return json.loads("".join(p.get("text", "") for p in cands[0]["content"]["parts"]))
             except ValueError:
                 last = f"{model}: обрезанный ответ"
+        if not models:
+            break
         if rnd < 2:
             time.sleep(20 * (rnd + 1))
     raise RuntimeError(f"Gemini недоступен или лимит исчерпан ({last})")

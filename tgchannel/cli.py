@@ -265,6 +265,8 @@ def cmd_check(args) -> int:
             print("✓ Gemini отвечает")
         except RuntimeError as e:
             bad(str(e))
+        for model, until in ai.exhausted_models().items():
+            print(f"  ⚠ {model}: дневной лимит исчерпан, не используется до {until.strftime('%d.%m %H:%M')} UTC")
 
     try:
         n = len(collect(args.hours))

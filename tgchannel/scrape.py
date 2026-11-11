@@ -52,7 +52,7 @@ def parse_channel_html(html: str, channel: str, kind: str = "news") -> list[Post
         date = None
         if time_el:
             try:
-                date = datetime.fromisoformat(time_el["datetime"])
+                date = datetime.fromisoformat(time_el["datetime"].replace("Z", "+00:00"))
                 if date.tzinfo is None:
                     date = date.replace(tzinfo=timezone.utc)
             except ValueError:
@@ -85,7 +85,11 @@ def read_sources(path: str) -> list[tuple[str, str]]:
             if not line:
                 continue
             parts = line.split()
-            name = parts[0].lstrip("@").removeprefix("https://t.me/").removeprefix("s/").strip("/")
+            name = parts[0].lstrip("@")
+            for prefix in ("https://", "http://", "t.me/", "s/"):  # str.removeprefix есть только с Python 3.9
+                if name.startswith(prefix):
+                    name = name[len(prefix):]
+            name = name.strip("/")
             kind = parts[1] if len(parts) > 1 and parts[1] in ("news", "meme") else "news"
             out.append((name, kind))
     return out

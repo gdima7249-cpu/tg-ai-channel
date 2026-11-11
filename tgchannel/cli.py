@@ -157,7 +157,7 @@ def cmd_check(args) -> int:
                         chat = telegram.get_chat(token, os.environ[name])
                         print(f"✓ {name}: {chat.get('title') or chat.get('username') or chat['id']}")
                     except telegram.TelegramError as e:
-                        bad(f"{name}: {e} (бот добавлен в канал администратором?)")
+                        bad(f"{name}: {e} — для канала нужен @username (например @my_channel) или id -100..., и бот должен быть администратором канала")
             if not os.environ.get("TG_CHANNEL"):
                 bad("TG_CHANNEL не задан")
         except telegram.TelegramError as e:

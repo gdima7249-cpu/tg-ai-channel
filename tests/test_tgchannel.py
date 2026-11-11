@@ -36,8 +36,8 @@ def test_parse_channel_html():
 
 def test_read_sources(tmp_path):
     f = tmp_path / "s.txt"
-    f.write_text("# коммент\n@one news\nhttps://t.me/two meme\nthree  # хвост\nfour bogus\n", encoding="utf-8")
-    assert scrape.read_sources(str(f)) == [("one", "news"), ("two", "meme"), ("three", "news"), ("four", "news")]
+    f.write_text("# коммент\n@one news\nhttps://t.me/two meme\nthree  # хвост\nfour bogus\nhttps://t.me/s/five meme\n", encoding="utf-8")
+    assert scrape.read_sources(str(f)) == [("one", "news"), ("two", "meme"), ("three", "news"), ("four", "news"), ("five", "meme")]
 
 
 def test_wanted_type():

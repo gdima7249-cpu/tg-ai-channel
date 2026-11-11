@@ -1,15 +1,20 @@
 [Unit]
-Description=tgchannel: 5 постов в день
+Description=tgchannel: 10 постов в день
 
 [Timer]
-# Время московское; к каждому запуску добавляется случайная задержка до 40 минут,
-# чтобы посты не выходили минута в минуту и канал не выглядел роботом.
-OnCalendar=*-*-* 09:30:00 Europe/Moscow
-OnCalendar=*-*-* 12:30:00 Europe/Moscow
-OnCalendar=*-*-* 15:30:00 Europe/Moscow
-OnCalendar=*-*-* 18:30:00 Europe/Moscow
-OnCalendar=*-*-* 21:00:00 Europe/Moscow
-RandomizedDelaySec=40min
+# Время московское, каждые ~1,5 часа с 08:30 до 22:00. К каждому запуску добавляется
+# случайная задержка до 20 минут, чтобы посты не выходили минута в минуту.
+OnCalendar=*-*-* 08:30:00 Europe/Moscow
+OnCalendar=*-*-* 10:00:00 Europe/Moscow
+OnCalendar=*-*-* 11:30:00 Europe/Moscow
+OnCalendar=*-*-* 13:00:00 Europe/Moscow
+OnCalendar=*-*-* 14:30:00 Europe/Moscow
+OnCalendar=*-*-* 16:00:00 Europe/Moscow
+OnCalendar=*-*-* 17:30:00 Europe/Moscow
+OnCalendar=*-*-* 19:00:00 Europe/Moscow
+OnCalendar=*-*-* 20:30:00 Europe/Moscow
+OnCalendar=*-*-* 22:00:00 Europe/Moscow
+RandomizedDelaySec=20min
 Persistent=false
 
 [Install]

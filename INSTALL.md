@@ -182,7 +182,7 @@ sudo -u tgchannel .venv/bin/python -m tgchannel post
 
 ## Часть 5. Автоматическая работа
 
-### 5.1. Включить расписание (5 постов в день)
+### 5.1. Включить расписание (10 постов в день)
 
 ```bash
 cp deploy/tgchannel.service deploy/tgchannel.timer /etc/systemd/system/
@@ -198,7 +198,7 @@ systemctl daemon-reload && systemctl enable --now tgchannel.timer
 systemctl list-timers tgchannel.timer
 ```
 
-Посты выходят около 09:30, 12:30, 15:30, 18:30 и 21:00 по Москве (плюс случайно до 40 минут).
+Посты выходят каждые ~1,5 часа с 08:30 до 22:00 по Москве (плюс случайно до 20 минут) — 10 в день.
 
 ### 5.2. Кнопки «Опубликовать / Отклонить» (режим одобрения)
 

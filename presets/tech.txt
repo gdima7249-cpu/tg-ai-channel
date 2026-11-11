@@ -1,0 +1,11 @@
+#! CHANNEL_TOPIC=технологии и гаджеты: смартфоны, компьютеры, интернет, электроника, IT-компании
+#! CHANNEL_STYLE=Пишем по-русски, просто и с лёгкой иронией, объясняем, зачем это обычному человеку. Эмодзи — 1–2.
+# Технологии и гаджеты — кандидаты из открытых подборок, НЕ проверены. Сначала:
+#   python -m tgchannel probe exploitex milord_q gagadget GeekUp tech_ru inApple n1tec
+exploitex news      # Эксплойт: интернет-культура и технологии
+milord_q news       # Милорд: технологии, стартапы, гаджеты
+gagadget news       # ГаГаджет: техника
+GeekUp news         # ГикАп: новости технологий
+tech_ru news        # Технологии будущего
+inApple news        # Apple
+n1tec news          # Технологии N1

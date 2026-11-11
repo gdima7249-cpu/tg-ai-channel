@@ -219,3 +219,16 @@ def test_select_channel_env_priority(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "SOURCES", tmp_path / "sources.txt")
     monkeypatch.setattr(cli, "STATE", tmp_path / "data" / "state.json")
     monkeypatch.setattr(cli, "CHANNEL", "")
+
+
+def test_new_channel_preset_fills_topic(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "ROOT", tmp_path)
+    (tmp_path / "presets").mkdir()
+    (tmp_path / "presets" / "tech.txt").write_text("#! CHANNEL_TOPIC=гаджеты\n#! CHANNEL_STYLE=коротко\nfoo news\n", encoding="utf-8")
+    assert cli.cmd_new_channel(type("A", (), {"name": "tech", "preset": "tech"})()) == 0
+    env = cli.read_env(tmp_path / "channels" / "tech" / ".env")
+    assert env["CHANNEL_TOPIC"] == "гаджеты" and env["CHANNEL_STYLE"] == "коротко" and env["TG_CHANNEL"] == ""
+    assert scrape.read_sources(str(tmp_path / "channels" / "tech" / "sources.txt")) == [("foo", "news")]
+    with pytest.raises(SystemExit):
+        cli.cmd_new_channel(type("A", (), {"name": "x", "preset": "nope"})())
+    assert not (tmp_path / "channels" / "x").exists()

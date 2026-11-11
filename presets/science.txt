@@ -1,0 +1,12 @@
+#! CHANNEL_TOPIC=наука и космос: открытия, исследования, космические миссии, необычные факты
+#! CHANNEL_STYLE=Пишем по-русски, увлекательно и понятно школьнику, но без упрощений, искажающих смысл. Эмодзи — 1–2.
+# Наука и космос — кандидаты из открытых подборок, НЕ проверены. Сначала:
+#   python -m tgchannel probe nplusone postnauka kosmo_off deepinterest SciTopus tirsky vselennayaplus cosmosprosto
+nplusone news        # N+1: новости науки и технологий
+postnauka news       # ПостНаука
+kosmo_off news       # Космо: астрономия, миссии, фото
+deepinterest news    # Эпицентр знаний: научные факты
+SciTopus news        # научпоп-видео (картинки — обложки видео не берутся)
+tirsky news          # астрономия
+vselennayaplus news  # космос
+cosmosprosto news    # космос

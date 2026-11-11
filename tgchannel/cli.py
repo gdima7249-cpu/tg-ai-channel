@@ -426,11 +426,22 @@ def cmd_new_channel(args) -> int:
     if d.exists():
         raise SystemExit(f"channels/{name} уже есть")
     d.mkdir(parents=True)
-    (d / ".env").write_text(CHANNEL_ENV.format(name=name), encoding="utf-8")
+    env = CHANNEL_ENV.format(name=name)
     src = ROOT / "presets" / f"{args.preset}.txt" if args.preset else None
-    if src and src.exists():
-        (d / "sources.txt").write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+    if src and not src.exists():
+        d.rmdir()
+        have = ", ".join(sorted(p.stem for p in (ROOT / "presets").glob("*.txt"))) or "нет"
+        raise SystemExit(f"Нет пресета {args.preset}. Есть: {have}")
+    if src:
+        text = src.read_text(encoding="utf-8")
+        for line in text.splitlines():  # строки «#! КЛЮЧ=значение» — тема и стиль для .env канала
+            if line.startswith("#!") and "=" in line:
+                key, value = line[2:].strip().split("=", 1)
+                env = re.sub(rf"^{re.escape(key)}=.*$", lambda m: f"{key}={value}", env, flags=re.M)
+        (d / ".env").write_text(env, encoding="utf-8")
+        (d / "sources.txt").write_text(text, encoding="utf-8")
     else:
+        (d / ".env").write_text(env, encoding="utf-8")
         (d / "sources.txt").write_text((ROOT / "sources.example.txt").read_text(encoding="utf-8"), encoding="utf-8")
     print(f"Создан канал channels/{name}. Дальше:\n"
           f"  1) nano channels/{name}/.env        — TG_CHANNEL, тема, стиль\n"

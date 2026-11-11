@@ -1,0 +1,14 @@
+[Unit]
+Description=tgchannel: кнопки «Опубликовать/Отклонить» под черновиками
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=/opt/tgchannel/app
+ExecStart=/opt/tgchannel/app/.venv/bin/python -m tgchannel bot
+User=tgchannel
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

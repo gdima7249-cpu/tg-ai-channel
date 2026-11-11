@@ -64,7 +64,8 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(scrape, "fetch_channel", lambda name, kind: feeds[name])
     monkeypatch.setattr(scrape, "download", lambda url: b"IMG")
     sent = []
-    monkeypatch.setattr(telegram, "publish", lambda t, c, text, img: sent.append((c, text, img)) or 42)
+    monkeypatch.setattr(telegram, "publish", lambda t, c, text, img: sent.append((c, text, img)) or [42])
+    monkeypatch.setattr(telegram, "set_buttons", lambda *a: sent.append(("buttons",) + a[1:]))
     return sent
 
 
@@ -108,7 +109,7 @@ def test_meme_without_image_is_skipped(env, monkeypatch):
 def test_publish_long_text_splits(monkeypatch):
     calls = []
     monkeypatch.setattr(telegram, "_call", lambda tok, m, data, files=None: calls.append(m) or {"message_id": 1})
-    telegram.publish("t", "c", "x" * 2000, b"img")
+    assert telegram.publish("t", "c", "x" * 2000, b"img") == [1, 1]
     assert calls == ["sendPhoto", "sendMessage"]
     calls.clear()
     telegram.publish("t", "c", "short", b"img")
@@ -127,3 +128,44 @@ def test_probe(monkeypatch, capsys):
     assert cli.cmd_probe(args) == 0
     out = capsys.readouterr().out
     assert "✓ live" in out and "с картинкой 1" in out and "✗ dead" in out
+
+
+def test_preview_mode_adds_approve_buttons(env, monkeypatch):
+    monkeypatch.setenv("TG_PREVIEW_CHAT", "777")
+    monkeypatch.setattr(cli.ai, "choose_and_write", lambda *a: {"type": "news", "source_ids": ["a/1"], "image_id": "", "text": "t", "topic": "t"})
+    assert cli.cmd_post(_args()) == 0
+    assert env[0][0] == "777"
+    assert env[1] == ("buttons", "777", 42, cli.approve_buttons([42]))
+
+
+@pytest.fixture
+def tg(monkeypatch):
+    calls = []
+    for name in ("copy_message", "answer_callback", "set_buttons", "send_text"):
+        monkeypatch.setattr(telegram, name, lambda *a, _n=name, **k: calls.append((_n,) + a[1:]) or 1)
+    return calls
+
+
+def _cb(data, user=777, chat=777, mid=11):
+    return {"update_id": 1, "callback_query": {"id": "q", "data": data, "from": {"id": user},
+                                               "message": {"message_id": mid, "chat": {"id": chat}}}}
+
+
+def test_approve_button_copies_all_parts(tg):
+    cli.handle_update(_cb("pub:10:11"), "t", "777", "@mine")
+    assert ("copy_message", "@mine", 777, 10) in tg and ("copy_message", "@mine", 777, 11) in tg
+    assert tg[-1][0] == "set_buttons" and "Опубликовано" in tg[-1][3][0][0]["text"]
+
+
+def test_reject_and_foreign_user(tg):
+    cli.handle_update(_cb("rej:10:10"), "t", "777", "@mine")
+    assert not any(c[0] == "copy_message" for c in tg)
+    tg.clear()
+    cli.handle_update(_cb("pub:10:10", user=666, chat=666), "t", "777", "@mine")
+    assert tg == [("answer_callback", "q", "Нет доступа")]
+
+
+def test_reply_plus_publishes_old_message(tg):
+    upd = {"update_id": 2, "message": {"chat": {"id": 777}, "text": "+", "reply_to_message": {"message_id": 5}}}
+    cli.handle_update(upd, "t", "777", "@mine")
+    assert tg[0] == ("copy_message", "@mine", "777", 5)

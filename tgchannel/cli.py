@@ -4,6 +4,7 @@ post     — собрать посты из источников, выбрать
            (--dry-run: только показать текст, ничего не отправлять)
 check    — проверить настройки: токен бота, доступ к каналу, ключ Gemini, источники
 sources  — показать, что удалось прочитать из каждого источника
+bot      — постоянно слушать кнопки «Опубликовать/Отклонить» под черновиками (режим TG_PREVIEW_CHAT)
 probe    — проверить любые каналы до добавления в sources.txt: python -m tgchannel probe имя1 имя2 ...
 """
 
@@ -125,9 +126,15 @@ def cmd_post(args) -> int:
         log.warning("Картинка не скачалась, публикую без неё")
 
     token = os.environ["TG_BOT_TOKEN"]
-    chat = os.environ.get("TG_PREVIEW_CHAT") or os.environ["TG_CHANNEL"]
-    msg_id = telegram.publish(token, chat, text, image)
-    log.info("Опубликовано в %s, message_id=%s", chat, msg_id)
+    preview = os.environ.get("TG_PREVIEW_CHAT", "").strip()
+    chat = preview or os.environ["TG_CHANNEL"]
+    msg_ids = telegram.publish(token, chat, text, image)
+    if preview:  # черновик: кнопки на последнем сообщении, в callback — какие сообщения копировать
+        telegram.set_buttons(token, chat, msg_ids[-1], approve_buttons(msg_ids))
+        log.info("Черновик отправлен на одобрение в %s, message_id=%s", chat, msg_ids)
+    else:
+        log.info("Опубликовано в %s, message_id=%s", chat, msg_ids)
+    msg_id = msg_ids
 
     state["used"] += sources + ([img_post.id] if img_post else [])
     state["published"].append({"at": datetime.now(timezone.utc).isoformat(timespec="minutes"),
@@ -190,6 +197,87 @@ def cmd_sources(args) -> int:
     return 0
 
 
+def approve_buttons(msg_ids: list[int]) -> list[list[dict]]:
+    ids = f"{msg_ids[0]}:{msg_ids[-1]}"
+    return [[{"text": "✅ Опубликовать", "callback_data": f"pub:{ids}"},
+             {"text": "❌ Отклонить", "callback_data": f"rej:{ids}"}]]
+
+
+APPROVE_WORDS = {"+", "да", "ок", "ok", "/pub", "опубликовать", "публикуй", "го"}
+
+
+def handle_update(upd: dict, token: str, admin: str, channel: str) -> None:
+    """Одно обновление от Telegram: нажатие кнопки под черновиком или ответ «+» на любое сообщение бота."""
+    cb = upd.get("callback_query")
+    if cb:
+        msg = cb.get("message") or {}
+        chat_id = msg.get("chat", {}).get("id")
+        if str(cb["from"]["id"]) != admin or str(chat_id) != admin:
+            telegram.answer_callback(token, cb["id"], "Нет доступа")
+            return
+        action, first, last = (cb.get("data", "").split(":") + ["", ""])[:3]
+        if action not in ("pub", "rej") or not first.isdigit() or not last.isdigit():
+            telegram.answer_callback(token, cb["id"])
+            return
+        if action == "pub":
+            try:
+                for mid in range(int(first), int(last) + 1):
+                    telegram.copy_message(token, channel, chat_id, mid)
+            except telegram.TelegramError as e:
+                telegram.answer_callback(token, cb["id"], f"Ошибка: {e}"[:190])
+                return
+            done = [[{"text": "✅ Опубликовано", "callback_data": "noop"}]]
+            log.info("Одобрено и опубликовано: сообщения %s–%s → %s", first, last, channel)
+            telegram.answer_callback(token, cb["id"], "Опубликовано в канал")
+        else:
+            done = [[{"text": "❌ Отклонено", "callback_data": "noop"}]]
+            log.info("Отклонено: сообщения %s–%s", first, last)
+            telegram.answer_callback(token, cb["id"], "Отклонено")
+        telegram.set_buttons(token, chat_id, msg["message_id"], done)
+        return
+
+    m = upd.get("message") or {}
+    if str(m.get("chat", {}).get("id")) != admin:
+        return
+    reply = m.get("reply_to_message")
+    if reply and (m.get("text") or "").strip().lower() in APPROVE_WORDS:
+        try:
+            telegram.copy_message(token, channel, admin, reply["message_id"])
+            telegram.send_text(token, admin, "✅ Опубликовано в канал", reply_to=reply["message_id"])
+            log.info("Одобрено ответом: сообщение %s → %s", reply["message_id"], channel)
+        except telegram.TelegramError as e:
+            telegram.send_text(token, admin, f"Не получилось: {e}")
+    elif m.get("text", "").startswith("/start"):
+        telegram.send_text(token, admin, "Черновики будут приходить сюда с кнопками «Опубликовать» и «Отклонить». "
+                                         "Чтобы опубликовать старое сообщение без кнопок, ответьте на него «+».")
+
+
+def cmd_bot(args) -> int:
+    token = os.environ["TG_BOT_TOKEN"]
+    admin = os.environ.get("TG_PREVIEW_CHAT", "").strip()
+    channel = os.environ["TG_CHANNEL"]
+    if not admin:
+        raise RuntimeError("TG_PREVIEW_CHAT не задан: одобрять некому")
+    log.info("Жду одобрений от %s, публикую в %s", admin, channel)
+    offset = 0
+    while True:
+        try:
+            updates = telegram.get_updates(token, offset)
+        except (telegram.TelegramError, OSError) as e:  # сеть моргнула — подождать и продолжить
+            log.warning("getUpdates: %s", e)
+            import time
+            time.sleep(10)
+            continue
+        for upd in updates:
+            offset = upd["update_id"] + 1
+            try:
+                handle_update(upd, token, admin, channel)
+            except Exception as e:  # одно сломанное обновление не должно ронять бота
+                log.exception("Ошибка обработки обновления: %s", e)
+        if args.once:
+            return 0
+
+
 def cmd_probe(args) -> int:
     """Живой ли канал: сколько постов на странице, сколько с картинками, когда был последний."""
     now = datetime.now(timezone.utc)
@@ -222,6 +310,9 @@ def main(argv=None) -> None:
         p.set_defaults(fn=fn)
         if name == "post":
             p.add_argument("--dry-run", action="store_true", help="показать пост, ничего не публиковать")
+    p = sub.add_parser("bot")
+    p.add_argument("--once", action="store_true", help=argparse.SUPPRESS)
+    p.set_defaults(fn=cmd_bot)
     p = sub.add_parser("probe")
     p.add_argument("channels", nargs="+", help="username каналов (можно с @ или ссылкой t.me)")
     p.add_argument("--hours", type=float, default=24)
